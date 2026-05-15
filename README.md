@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**English**
+**English** ｜ [中文](README_zh.md)
 
 </div>
 
