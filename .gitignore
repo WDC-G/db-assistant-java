@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+target/
+out/
+build/
+
+# OS
+Thumbs.db
+ehthumbs.db
+
+# Cache
+.cache/
