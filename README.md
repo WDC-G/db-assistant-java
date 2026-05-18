@@ -18,7 +18,7 @@ It ships as a single Java source file (`SqlRunner.java`) that compiles on the fl
 
 ### Features
 
-- **Multi-database**: MySQL / MariaDB / PostgreSQL / SQL Server / SQLite
+- **Multi-database**: 20+ databases — MySQL / MariaDB / Oracle / PostgreSQL / Greenplum / GaussDB / SQL Server / SQLite / DB2 / SAP HANA / DM / Kingbase / OceanBase / ClickHouse / Doris / StarRocks / TDSQL / Sybase / TDengine / Hive / Impala / Inceptor / ArgoDB / GBase / NebulaGraph
 - **Zero install**: No build tool required — `javac` compiles the single-file tool on the fly
 - **Driver auto-discovery**: Locates JDBC driver JARs from `~/.m2` and `~/.gradle` caches
 - **Smart caching**: Schema, table list, and index results cached with configurable TTL
@@ -110,15 +110,45 @@ git clone https://github.com/cycle2zhou/db-assistant-java.git ~/.agents/skills/d
 
 The skill automatically locates driver JARs from your local build tool caches:
 
-| Database | Artifact |
+#### Relational Databases
+
+| Database | Driver Artifact | Notes |
+|---|---|---|
+| MySQL | `mysql-connector-java` / `mysql-connector-j` | Compatible with Doris, StarRocks, TDSQL |
+| MariaDB | `mariadb-java-client` | |
+| Oracle | `ojdbc8` / `ojdbc11` | Supports SERVICE_NAME and SID modes |
+| PostgreSQL | `postgresql` | Compatible with Greenplum |
+| GaussDB | `gsjdbc4` / `opengauss-jdbc` | |
+| SQL Server | `mssql-jdbc` | |
+| SQLite | `sqlite-jdbc` | Local file database |
+| DB2 | `jcc` / `db2jcc4` | |
+| SAP HANA | `ngdbc` | |
+| DM (达梦) | `DmJdbcDriver` | |
+| Kingbase (人大金仓) | `kingbase8` | |
+| OceanBase | `oceanbase-client` | MySQL / Oracle dual-mode |
+| GBase 8a | `gbase-connector-java` | |
+| GBase 8s | `gbasedbt-sqli` | |
+
+#### Cloud-native & Analytics
+
+| Database | Driver Artifact | Notes |
+|---|---|---|
+| ClickHouse | `clickhouse-jdbc` | |
+| Hive | `hive-jdbc` | Supports ZooKeeper-based HA |
+| Impala | `ImpalaJDBC` | Supports NoAuth / LDAP / Kerberos |
+| Inceptor / ArgoDB | `inceptor-driver` / `transwarp2-jdbc` | Transwarp platform |
+| TDengine | `taos-jdbcdriver` | |
+
+#### Others
+
+| Database | Driver Artifact |
 |---|---|
-| MySQL | `mysql-connector-java` / `mysql-connector-j` |
-| MariaDB | `mariadb-java-client` |
-| PostgreSQL | `postgresql` |
-| SQLite | `sqlite-jdbc` |
-| SQL Server | `mssql-jdbc` |
+| Sybase | `jconn4` |
+| NebulaGraph | `nebula-jdbc` |
 
 No manual download needed — if you've ever used the database in a Java project, the driver is already there.
+
+> **Tip**: Databases sharing the same JDBC URL prefix (e.g., Doris, StarRocks, TDSQL via `jdbc:mysql:`, Greenplum via `jdbc:postgresql:`) can reuse the corresponding driver. They are all covered by the auto-discovery rules above.
 
 ## Project Structure
 
@@ -127,7 +157,8 @@ db-assistant-java/
 ├── SKILL.md            # AI agent skill definition
 ├── lib/
 │   └── SqlRunner.java  # Single-file SQL runner (the entire tool)
-├── README.md
+├── README.md           # English documentation
+├── README_zh.md        # Chinese documentation
 ├── LICENSE
 └── .gitignore
 ```

@@ -18,7 +18,7 @@ DB Assistant 让 AI Agent 能够直接探索和查询关系型数据库，无需
 
 ### 特性
 
-- **多数据库**：MySQL / MariaDB / PostgreSQL / SQL Server / SQLite
+- **多数据库**：支持 20+ 种数据库 — MySQL / MariaDB / Oracle / PostgreSQL / Greenplum / GaussDB / SQL Server / SQLite / DB2 / SAP HANA / DM(达梦) / Kingbase(人大金仓) / OceanBase / ClickHouse / Doris / StarRocks / TDSQL / Sybase / TDengine / Hive / Impala / Inceptor / ArgoDB / GBase / NebulaGraph
 - **零安装**：无需构建工具 — `javac` 即时编译单文件工具
 - **驱动自动发现**：从 `~/.m2` 和 `~/.gradle` 缓存中定位 JDBC 驱动 JAR
 - **智能缓存**：Schema、表列表、索引结果带 TTL 缓存
@@ -110,15 +110,45 @@ git clone https://github.com/cycle2zhou/db-assistant-java.git ~/.agents/skills/d
 
 Skill 自动从本地构建工具缓存中定位驱动 JAR：
 
+#### 关系型数据库
+
+| 数据库 | 驱动包名 | 备注 |
+|---|---|---|
+| MySQL | `mysql-connector-java` / `mysql-connector-j` | 兼容 Doris、StarRocks、TDSQL |
+| MariaDB | `mariadb-java-client` | |
+| Oracle | `ojdbc8` / `ojdbc11` | 支持 SERVICE_NAME 和 SID 两种模式 |
+| PostgreSQL | `postgresql` | 兼容 Greenplum |
+| GaussDB | `gsjdbc4` / `opengauss-jdbc` | |
+| SQL Server | `mssql-jdbc` | |
+| SQLite | `sqlite-jdbc` | 本地文件数据库 |
+| DB2 | `jcc` / `db2jcc4` | |
+| SAP HANA | `ngdbc` | |
+| DM (达梦) | `DmJdbcDriver` | |
+| Kingbase (人大金仓) | `kingbase8` | |
+| OceanBase | `oceanbase-client` | 兼容 MySQL / Oracle 双模式 |
+| GBase 8a | `gbase-connector-java` | |
+| GBase 8s | `gbasedbt-sqli` | |
+
+#### 云原生与分析型
+
+| 数据库 | 驱动包名 | 备注 |
+|---|---|---|
+| ClickHouse | `clickhouse-jdbc` | |
+| Hive | `hive-jdbc` | 支持 ZooKeeper 高可用 |
+| Impala | `ImpalaJDBC` | 支持 NoAuth / LDAP / Kerberos |
+| Inceptor / ArgoDB | `inceptor-driver` / `transwarp2-jdbc` | 星环科技平台 |
+| TDengine | `taos-jdbcdriver` | |
+
+#### 其他
+
 | 数据库 | 驱动包名 |
 |---|---|
-| MySQL | `mysql-connector-java` / `mysql-connector-j` |
-| MariaDB | `mariadb-java-client` |
-| PostgreSQL | `postgresql` |
-| SQLite | `sqlite-jdbc` |
-| SQL Server | `mssql-jdbc` |
+| Sybase | `jconn4` |
+| NebulaGraph | `nebula-jdbc` |
 
 无需手动下载 — 只要你之前在 Java 项目中用过该数据库，驱动就已经在本地了。
+
+> **提示**：共享相同 JDBC URL 前缀的数据库（如 Doris、StarRocks、TDSQL 使用 `jdbc:mysql:`，Greenplum 使用 `jdbc:postgresql:`）可直接复用对应驱动，均在上述自动发现规则覆盖范围内。
 
 ## 项目结构
 
@@ -126,9 +156,9 @@ Skill 自动从本地构建工具缓存中定位驱动 JAR：
 db-assistant-java/
 ├── SKILL.md            # AI Agent 技能定义
 ├── lib/
-│   └── SqlRunner.java  # 单文件 SQL 执行器（整个工具就这一个文件）
-├── README.md           # 英文说明
-├── README_zh.md        # 中文说明
+│   └── SqlRunner.java  # 单文件 SQL 执行器（核心工具）
+├── README.md           # 英文文档
+├── README_zh.md        # 中文文档
 ├── LICENSE
 └── .gitignore
 ```
