@@ -6,15 +6,15 @@ import java.security.MessageDigest;
 
 /**
  * SQL 执行器 - 通过 JDBC 执行数据库查询，支持智能缓存
- * 
+ *
  * 用法：java SqlRunner <command> <jdbcUrl> <user> <password> [args...] [options...]
- * 
+ *
  * 命令：
  *   execute_sql    执行 SQL 查询
  *   list_tables    列出所有表
  *   describe_table 查看表结构（支持缓存）
  *   list_indexes   查看表索引（支持缓存）
- * 
+ *
  * 缓存策略：
  *   - 缓存目录：~/.cache/db-assistant/
  *   - 默认 TTL：5 分钟
@@ -38,12 +38,12 @@ public class SqlRunner {
     private static final String CACHE_DIR = System.getProperty("user.home") + "/.cache/db-assistant";
 
     private static final String[] WRITE_KEYWORDS = {
-        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", 
-        "TRUNCATE", "REPLACE", "MERGE", "GRANT", "REVOKE"
+            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
+            "TRUNCATE", "REPLACE", "MERGE", "GRANT", "REVOKE"
     };
 
     private static final Set<String> OPTION_FLAGS = new HashSet<>(Arrays.asList(
-        "--readonly", "--no-readonly", "--max-rows", "--timeout", "--format", "--no-cache", "--cache-ttl"
+            "--readonly", "--no-readonly", "--max-rows", "--timeout", "--format", "--no-cache", "--cache-ttl"
     ));
 
     public static void main(String[] args) {
@@ -59,7 +59,7 @@ public class SqlRunner {
 
         List<String> commandArgs = new ArrayList<>();
         List<String> options = new ArrayList<>();
-        
+
         for (int i = 4; i < args.length; i++) {
             if (OPTION_FLAGS.contains(args[i]) || (i > 4 && OPTION_FLAGS.contains(args[i-1]) && isNumber(args[i]))) {
                 options.add(args[i]);
@@ -81,7 +81,7 @@ public class SqlRunner {
                     conn.setNetworkTimeout(null, timeout * 1000);
                 } catch (SQLException ignored) {}
             }
-            
+
             switch (command.toLowerCase()) {
                 case "execute_sql":
                     if (commandArgs.isEmpty()) {
@@ -139,6 +139,21 @@ public class SqlRunner {
         if (url.startsWith("jdbc:sqlserver:")) return "sqlserver";
         if (url.startsWith("jdbc:sqlite:")) return "sqlite";
         if (url.startsWith("jdbc:oracle:")) return "oracle";
+        if (url.startsWith("jdbc:oceanbase:")) return "oceanbase";
+        if (url.startsWith("jdbc:gaussdb:")) return "gaussdb";
+        if (url.startsWith("jdbc:clickhouse:")) return "clickhouse";
+        if (url.startsWith("jdbc:dm:")) return "dm";
+        if (url.startsWith("jdbc:kingbase8:")) return "kingbase";
+        if (url.startsWith("jdbc:sap:")) return "hana";
+        if (url.startsWith("jdbc:sybase:")) return "sybase";
+        if (url.startsWith("jdbc:taos-rs:")) return "tdengine";
+        if (url.startsWith("jdbc:hive2:")) return "hive";
+        if (url.startsWith("jdbc:transwarp2:")) return "transwarp";
+        if (url.startsWith("jdbc:impala:")) return "impala";
+        if (url.startsWith("jdbc:db2:")) return "db2";
+        if (url.startsWith("jdbc:gbase:")) return "gbase";
+        if (url.startsWith("jdbc:gbasedbt-sqli:")) return "gbase8s";
+        if (url.startsWith("jdbc:nebula:")) return "nebulagraph";
         return "unknown";
     }
 
@@ -222,12 +237,12 @@ public class SqlRunner {
         }
 
         String trimmed = sql.trim().toUpperCase();
-        boolean isQuery = trimmed.startsWith("SELECT") || 
-                          trimmed.startsWith("SHOW") || 
-                          trimmed.startsWith("DESCRIBE") || 
-                          trimmed.startsWith("EXPLAIN") ||
-                          trimmed.startsWith("PRAGMA") ||
-                          trimmed.startsWith("WITH");
+        boolean isQuery = trimmed.startsWith("SELECT") ||
+                trimmed.startsWith("SHOW") ||
+                trimmed.startsWith("DESCRIBE") ||
+                trimmed.startsWith("EXPLAIN") ||
+                trimmed.startsWith("PRAGMA") ||
+                trimmed.startsWith("WITH");
 
         if (isQuery) {
             executeQuery(conn, sql);
@@ -238,7 +253,7 @@ public class SqlRunner {
 
     private static void listTables(Connection conn, String dbType, String dbKey) throws SQLException {
         String cacheKey = "tables-" + dbKey;
-        
+
         if (!noCache) {
             String cached = readCache(cacheKey);
             if (cached != null) {
@@ -265,10 +280,23 @@ public class SqlRunner {
             case "oracle":
                 sql = "SELECT TABLE_NAME FROM USER_TABLES ORDER BY TABLE_NAME";
                 break;
+            case "dm":
+            case "kingbase":
+                sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_type = 'BASE TABLE' ORDER BY table_name";
+                break;
+            case "db2":
+                sql = "SELECT TABNAME AS TABLE_NAME FROM SYSCAT.TABLES WHERE TYPE = 'T' AND TABSCHEMA = CURRENT SCHEMA ORDER BY TABNAME";
+                break;
+            case "hive":
+            case "transwarp":
+            case "impala":
+                sql = "SHOW TABLES";
+                break;
             default:
-                sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME";
+                printJson(listTablesByMetaData(conn));
+                return;
         }
-        
+
         List<Map<String, Object>> result = executeQueryRaw(conn, sql);
         String json = toJson(result);
         writeCache(cacheKey, json);
@@ -277,7 +305,7 @@ public class SqlRunner {
 
     private static void describeTable(Connection conn, String tableName, String dbType, String dbKey) throws SQLException {
         String cacheKey = "schema-" + dbKey + "-" + tableName;
-        
+
         if (!noCache) {
             String cached = readCache(cacheKey);
             if (cached != null) {
@@ -294,11 +322,11 @@ public class SqlRunner {
                 break;
             case "postgresql":
                 sql = "SELECT column_name, data_type, is_nullable, column_default, character_maximum_length " +
-                      "FROM information_schema.columns WHERE table_name = '" + tableName + "' ORDER BY ordinal_position";
+                        "FROM information_schema.columns WHERE table_name = '" + tableName + "' ORDER BY ordinal_position";
                 break;
             case "sqlserver":
                 sql = "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH, COLUMN_DEFAULT " +
-                      "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '" + tableName + "' ORDER BY ORDINAL_POSITION";
+                        "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '" + tableName + "' ORDER BY ORDINAL_POSITION";
                 break;
             case "sqlite":
                 sql = "PRAGMA table_info(" + tableName + ")";
@@ -306,11 +334,25 @@ public class SqlRunner {
             case "oracle":
                 sql = "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_DEFAULT FROM USER_TAB_COLUMNS WHERE TABLE_NAME = '" + tableName + "' ORDER BY COLUMN_ID";
                 break;
+            case "dm":
+            case "kingbase":
+                sql = "SELECT column_name, data_type, is_nullable, column_default, character_maximum_length " +
+                        "FROM information_schema.columns WHERE table_name = '" + tableName + "' ORDER BY ordinal_position";
+                break;
+            case "db2":
+                sql = "SELECT COLNAME AS COLUMN_NAME, TYPENAME AS DATA_TYPE, NULLS AS IS_NULLABLE, DEFAULT AS COLUMN_DEFAULT, LENGTH AS CHARACTER_MAXIMUM_LENGTH " +
+                        "FROM SYSCAT.COLUMNS WHERE TABNAME = '" + tableName.toUpperCase() + "' ORDER BY COLNO";
+                break;
+            case "hive":
+            case "transwarp":
+            case "impala":
+                sql = "DESCRIBE " + tableName;
+                break;
             default:
-                sql = "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH " +
-                      "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '" + tableName + "' ORDER BY ORDINAL_POSITION";
+                printJson(describeTableByMetaData(conn, tableName));
+                return;
         }
-        
+
         List<Map<String, Object>> result = executeQueryRaw(conn, sql);
         String json = toJson(result);
         writeCache(cacheKey, json);
@@ -319,7 +361,7 @@ public class SqlRunner {
 
     private static void listIndexes(Connection conn, String tableName, String dbType, String dbKey) throws SQLException {
         String cacheKey = "indexes-" + dbKey + "-" + tableName;
-        
+
         if (!noCache) {
             String cached = readCache(cacheKey);
             if (cached != null) {
@@ -339,11 +381,11 @@ public class SqlRunner {
                 break;
             case "sqlserver":
                 sql = "SELECT i.name AS index_name, c.name AS column_name, i.is_unique " +
-                      "FROM sys.indexes i " +
-                      "JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id " +
-                      "JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id " +
-                      "WHERE i.object_id = OBJECT_ID('" + tableName + "') " +
-                      "ORDER BY i.name, ic.key_ordinal";
+                        "FROM sys.indexes i " +
+                        "JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id " +
+                        "JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id " +
+                        "WHERE i.object_id = OBJECT_ID('" + tableName + "') " +
+                        "ORDER BY i.name, ic.key_ordinal";
                 break;
             case "sqlite":
                 sql = "PRAGMA index_list(" + tableName + ")";
@@ -351,15 +393,73 @@ public class SqlRunner {
             case "oracle":
                 sql = "SELECT INDEX_NAME, COLUMN_NAME, UNIQUENESS FROM USER_IND_COLUMNS WHERE TABLE_NAME = '" + tableName + "'";
                 break;
+            case "dm":
+            case "kingbase":
+                sql = "SELECT indexname AS INDEX_NAME, indexdef AS INDEX_DEF FROM pg_indexes WHERE tablename = '" + tableName + "'";
+                break;
+            case "db2":
+                sql = "SELECT indname AS INDEX_NAME, colnames AS COLUMN_NAME, uniquerule AS UNIQUENESS FROM syscat.indexes WHERE tabname = '" + tableName.toUpperCase() + "'";
+                break;
             default:
-                printError("list_indexes 不支持当前数据库类型: " + dbType);
+                printJson(listIndexesByMetaData(conn, tableName));
                 return;
         }
-        
+
         List<Map<String, Object>> result = executeQueryRaw(conn, sql);
         String json = toJson(result);
         writeCache(cacheKey, json);
         System.out.println(json);
+    }
+
+    private static List<Map<String, Object>> listTablesByMetaData(Connection conn) throws SQLException {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        DatabaseMetaData metaData = conn.getMetaData();
+        ResultSet rs = metaData.getTables(conn.getCatalog(), null, "%", new String[]{"TABLE"});
+        while (rs.next()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("TABLE_CAT", rs.getString("TABLE_CAT"));
+            row.put("TABLE_SCHEM", rs.getString("TABLE_SCHEM"));
+            row.put("TABLE_NAME", rs.getString("TABLE_NAME"));
+            row.put("TABLE_TYPE", rs.getString("TABLE_TYPE"));
+            rows.add(row);
+        }
+        rs.close();
+        return rows;
+    }
+
+    private static List<Map<String, Object>> describeTableByMetaData(Connection conn, String tableName) throws SQLException {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        DatabaseMetaData metaData = conn.getMetaData();
+        ResultSet rs = metaData.getColumns(conn.getCatalog(), null, tableName, "%");
+        while (rs.next()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("COLUMN_NAME", rs.getString("COLUMN_NAME"));
+            row.put("DATA_TYPE", rs.getString("TYPE_NAME"));
+            row.put("COLUMN_SIZE", rs.getObject("COLUMN_SIZE"));
+            row.put("DECIMAL_DIGITS", rs.getObject("DECIMAL_DIGITS"));
+            row.put("IS_NULLABLE", rs.getString("IS_NULLABLE"));
+            row.put("COLUMN_DEF", rs.getString("COLUMN_DEF"));
+            rows.add(row);
+        }
+        rs.close();
+        return rows;
+    }
+
+    private static List<Map<String, Object>> listIndexesByMetaData(Connection conn, String tableName) throws SQLException {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        DatabaseMetaData metaData = conn.getMetaData();
+        ResultSet rs = metaData.getIndexInfo(conn.getCatalog(), null, tableName, false, false);
+        while (rs.next()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("INDEX_NAME", rs.getString("INDEX_NAME"));
+            row.put("COLUMN_NAME", rs.getString("COLUMN_NAME"));
+            row.put("NON_UNIQUE", rs.getObject("NON_UNIQUE"));
+            row.put("TYPE", rs.getObject("TYPE"));
+            row.put("ORDINAL_POSITION", rs.getObject("ORDINAL_POSITION"));
+            rows.add(row);
+        }
+        rs.close();
+        return rows;
     }
 
     private static void executeQuery(Connection conn, String sql) throws SQLException {
@@ -394,7 +494,7 @@ public class SqlRunner {
         }
         rs.close();
         stmt.close();
-        
+
         return rows;
     }
 
@@ -422,24 +522,24 @@ public class SqlRunner {
         try {
             Path cacheFile = Paths.get(CACHE_DIR, key + ".json");
             Path metaFile = Paths.get(CACHE_DIR, key + ".meta");
-            
+
             if (!Files.exists(cacheFile) || !Files.exists(metaFile)) {
                 return null;
             }
-            
+
             // 检查过期时间
             String meta = new String(Files.readAllBytes(metaFile));
             long created = Long.parseLong(meta.trim());
             long now = System.currentTimeMillis();
             long ttlMs = cacheTtl * 60 * 1000L;
-            
+
             if (now - created > ttlMs) {
                 // 缓存已过期，删除
                 Files.deleteIfExists(cacheFile);
                 Files.deleteIfExists(metaFile);
                 return null;
             }
-            
+
             return new String(Files.readAllBytes(cacheFile));
         } catch (Exception e) {
             return null;
@@ -452,10 +552,10 @@ public class SqlRunner {
             if (!Files.exists(cacheDir)) {
                 Files.createDirectories(cacheDir);
             }
-            
+
             Path cacheFile = Paths.get(CACHE_DIR, key + ".json");
             Path metaFile = Paths.get(CACHE_DIR, key + ".meta");
-            
+
             Files.write(cacheFile, content.getBytes());
             Files.write(metaFile, String.valueOf(System.currentTimeMillis()).getBytes());
         } catch (Exception e) {
@@ -476,17 +576,17 @@ public class SqlRunner {
             System.out.println("（无数据）");
             return;
         }
-        
+
         Map<String, Object> first = data.get(0);
         List<String> headers = new ArrayList<>(first.keySet());
-        
+
         StringBuilder sb = new StringBuilder();
         sb.append("| ");
         for (String h : headers) sb.append(h).append(" | ");
         sb.append("\n| ");
         for (int i = 0; i < headers.size(); i++) sb.append("--- | ");
         sb.append("\n");
-        
+
         for (Map<String, Object> row : data) {
             sb.append("| ");
             for (String h : headers) {
@@ -528,11 +628,11 @@ public class SqlRunner {
     private static String escapeJson(String value) {
         if (value == null) return "";
         return value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t");
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 
     private static String escapeMarkdown(String value) {
