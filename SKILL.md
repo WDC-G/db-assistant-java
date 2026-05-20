@@ -1,6 +1,6 @@
 ---
 name: db-assistant
-description: 通过上下文解析数据库连接信息，按 kt-datasource-plugins 的 JDBC URL 策略拼接连接串，并使用 JDBC 执行 SQL 查询。覆盖 MySQL/Oracle/PostgreSQL/Greenplum/GaussDB/ClickHouse/DM/Kingbase/HANA/Sybase/Doris/TDSQL/OceanBase/StarRocks/TDengine/Hive/Impala/DB2/Inceptor/ArgoDB/GBase/NebulaGraph 等类型。
+description: 通过上下文解析数据库连接信息，使用 JDBC 执行 SQL 查询。覆盖 MySQL/Oracle/PostgreSQL/Greenplum/GaussDB/ClickHouse/DM/Kingbase/HANA/Sybase/Doris/TDSQL/OceanBase/StarRocks/TDengine/Hive/Impala/DB2/Inceptor/ArgoDB/GBase/NebulaGraph 等类型。
 ---
 
 # DB Assistant
@@ -75,30 +75,7 @@ DB_PASSWORD=xxx
 
 ## JDBC URL 构建规则
 
-优先复用当前项目 `datasource-plugin-jdbc` 的拼接规则：
-
-- 来源文件：`datasource-plugin-jdbc/src/main/java/com/kt/datasource/util/JdbcUrlUtils.java`
-- 策略入口：`JdbcUrlStrategyFactory`
-- 输入模型：`DataSourceDTO`
-- 类型枚举：`DataSourcesType`
-
-字段对应关系：
-
-| DataSourceDTO 字段 | 含义 |
-| --- | --- |
-| `typeName` | 数据源类型，按 `DataSourcesType.getTypeName()` 匹配，忽略大小写 |
-| `url` | 主机、主机列表或特殊连接地址；TDSQL 可直接包含 `host:port`，Hive HA 可包含 ZooKeeper 列表 |
-| `port` | 端口 |
-| `dbName` | 数据库名；Hive/Impala/ArgoDB 未提供时按项目规则使用 `default` |
-| `schema` | 业务 schema；DM URL 模板使用 `dbName` 填充 `schema` 查询参数 |
-| `driverType` | OceanBase/GBase 等多模式驱动类型 |
-| `extend1` | Oracle/Impala 等策略扩展值；Impala 中是认证方式 |
-| `otherParams` | JDBC 追加参数，格式为 `{key,value}` 列表 |
-| `driverConf` | 驱动参数；GBase 8s 使用 `instanceName` |
-| `extConf` | 扩展参数；Oracle 使用 `connect_pattern=SERVICE_NAME|SID` |
-| `hiveParam` / `kerberosParam` | Hive/Inceptor Kerberos 与 HA 服务发现参数 |
-
-项目支持的 URL 模板：
+支持的 URL 模板：
 
 | 类型 | JDBC URL 格式 | 参数追加规则 |
 | --- | --- | --- |
@@ -132,108 +109,136 @@ DB_PASSWORD=xxx
 | `GBase` 8a | `jdbc:gbase://<host>:<port>/<db>`；无库：`jdbc:gbase://<host>:<port>` | `?k=v&k2=v2` |
 | `GBase` 8s | `jdbc:gbasedbt-sqli://<host>:<port>/<db>:GBASEDBTSERVER=<instanceName>` | `;k=v;k2=v2`；`driverType=Oracle` 时追加 `;SQLMODE=oracle` |
 | `NebulaGraph` | `jdbc:nebula://<host>:<port>/<db>`；无库：`jdbc:nebula://<host>:<port>` | `?k=v&k2=v2` |
-| `SQLite` | `jdbc:sqlite:<path>` | 非项目内策略，保留为本地轻量数据库支持 |
+| `SQLite` | `jdbc:sqlite:<path>` | 本地文件数据库，无额外参数 |
 
 构建约定：
 
 - 若用户已经提供完整 `jdbc:*` URL，直接使用，不再重拼。
 - 若用户提供 `typeName/url/port/dbName` 等离散字段，按上表拼接。
 - `otherParams` 追加时遵循项目策略的连接符和分隔符，不混用 `?`、`&`、`;`、`:`。
-- 需要 URL 转义时，按项目 `isEscaped=true` 逻辑对 `dbName` 和参数值做 UTF-8 URL encode，并把 `+` 替换为 `%20`。
+- 需要 URL 转义时，对 `dbName` 和参数值做 UTF-8 URL encode，并把 `+` 替换为 `%20`。
 - 实际能否执行查询取决于本机 Maven/Gradle 缓存或项目依赖中是否存在对应 JDBC driver。
 
 ## JDK 版本检测与驱动定位
 
+### 操作系统检测
+
+```bash
+# 所有平台通用，输出: Linux / Darwin / Windows_NT / MINGW* / CYGWIN*
+os_name=$(uname -s 2>/dev/null || echo "Windows")
+```
+
+根据 `uname -s` 结果判断平台：
+
+| `uname -s` 值 | 平台 | 用户主目录 | 路径分隔符 | classpath 分隔符 |
+|---|---|---|---|---|
+| `Darwin` | macOS | `$HOME` | `/` | `:` |
+| `Linux` | Linux | `$HOME` | `/` | `:` |
+| `MINGW*` / `MSYS*` / `CYGWIN*` | Windows (Git Bash) | `$USERPROFILE` | `/` 或 `\` | `;` |
+| （`uname` 不存在） | Windows (CMD/PowerShell) | `%USERPROFILE%` | `\` | `;` |
+
+### Maven 与 Gradle 默认目录
+
+按以下优先级定位构建工具缓存目录：
+
+**优先级 1**：显式环境变量覆盖
+
+```bash
+# Maven 本地仓库（如已设置）
+M2_REPO="${M2_REPO:-$HOME/.m2/repository}"
+
+# Gradle 用户目录（如已设置）
+GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+```
+
+**优先级 2**：按平台回退到默认目录
+
+| 平台 | Maven 本地仓库 | Gradle 缓存目录 |
+|---|---|---|
+| macOS / Linux | `~/.m2/repository` | `~/.gradle/caches/modules-2/files-2.1` |
+| Windows | `%USERPROFILE%\.m2\repository` | `%USERPROFILE%\.gradle\caches\modules-2\files-2.1` |
+
+> 提示：macOS 和 Linux 路径规则完全一致，统一使用 `$HOME`。Windows 下 `$HOME` 在 Git Bash 中等价于 `%USERPROFILE%`，因此脚本可统一使用 `$HOME` 前缀。
+
 ### JDK 版本检测
 
-```powershell
+```bash
 # 方式1：使用 mise（如果已安装）
-$javaHome = mise where java
-$javaBin = Join-Path $javaHome "bin"
+java_home=$(mise where java 2>/dev/null)
 
 # 方式2：使用 JAVA_HOME 环境变量
-if (-not $javaHome) {
-    $javaHome = $env:JAVA_HOME
-    $javaBin = Join-Path $javaHome "bin"
-}
+if [ -z "$java_home" ]; then
+    java_home="$JAVA_HOME"
+fi
 
 # 方式3：直接使用 PATH 中的 java
-if (-not $javaHome) {
-    $javaBin = (Get-Command java -ErrorAction SilentlyContinue).Source | Split-Path
-    $javaHome = Split-Path $javaBin
-}
+if [ -z "$java_home" ]; then
+    java_bin=$(which java 2>/dev/null)
+    java_home=$(dirname "$(dirname "$java_bin")")
+fi
+
+java_bin="$java_home/bin/java"
 
 # 获取 JDK 主版本号
-$versionOutput = & "$javaBin\java" -version 2>&1 | Out-String
 # Java 8 格式: 1.8.0_xxx → 8, Java 11+ 格式: 11.0.x → 11
-if ($versionOutput -match '"1\.(\d+)\.') {
-    $jdkMajor = $Matches[1]
-} elseif ($versionOutput -match '"(\d+)') {
-    $jdkMajor = $Matches[1]
-}
+version_output=$("$java_bin" -version 2>&1)
+if echo "$version_output" | grep -q '"1\.'; then
+    jdk_major=$(echo "$version_output" | grep -o '"1\.\([0-9]*\)' | head -1 | cut -d. -f2)
+else
+    jdk_major=$(echo "$version_output" | grep -o '"\([0-9]*\)' | head -1 | tr -d '"')
+fi
 ```
 
 ### 驱动 JAR 自动定位
 
 按以下顺序搜索，取最新版本：
 
+> 以下脚本统一使用 `$HOME`，macOS / Linux / Windows (Git Bash) 均可运行。`$M2_REPO` 和 `$GRADLE_USER_HOME` 如已设置则优先使用。
+
 **MySQL / MariaDB**：
 
-```powershell
+```bash
 # Maven 仓库搜索
-$jar = Get-ChildItem -Path "$env:USERPROFILE\.m2\repository\mysql" -Recurse -Filter "mysql-connector-java-*.jar" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notmatch "sources|javadoc" } |
-    Sort-Object Name -Descending | Select-Object -First 1
-if (-not $jar) {
-    $jar = Get-ChildItem -Path "$env:USERPROFILE\.m2\repository\com\mysql" -Recurse -Filter "mysql-connector-j-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch "sources|javadoc" } |
-        Sort-Object Name -Descending | Select-Object -First 1
-}
+jar=$(find "$M2_REPO/mysql" "$M2_REPO/com/mysql" -name "mysql-connector-*.jar" 2>/dev/null \
+    | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
 # Gradle 缓存搜索
-if (-not $jar) {
-    $jar = Get-ChildItem -Path "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1" -Recurse -Filter "mysql-connector-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch "sources|javadoc" } |
-        Sort-Object Name -Descending | Select-Object -First 1
-}
+if [ -z "$jar" ]; then
+    jar=$(find "$GRADLE_USER_HOME/caches/modules-2/files-2.1" -path "*/mysql*" -name "mysql-connector-*.jar" 2>/dev/null \
+        | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+fi
 ```
 
 **PostgreSQL**：
 
-```powershell
-$jar = Get-ChildItem -Path "$env:USERPROFILE\.m2\repository\org\postgresql" -Recurse -Filter "postgresql-*.jar" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notmatch "sources|javadoc" } |
-    Sort-Object Name -Descending | Select-Object -First 1
-if (-not $jar) {
-    $jar = Get-ChildItem -Path "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\org.postgresql" -Recurse -Filter "postgresql-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch "sources|javadoc" } |
-        Sort-Object Name -Descending | Select-Object -First 1
-}
+```bash
+jar=$(find "$M2_REPO/org/postgresql" -name "postgresql-*.jar" 2>/dev/null \
+    | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+if [ -z "$jar" ]; then
+    jar=$(find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.postgresql" -name "postgresql-*.jar" 2>/dev/null \
+        | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+fi
 ```
 
 **SQLite**：
 
-```powershell
-$jar = Get-ChildItem -Path "$env:USERPROFILE\.m2\repository\org\xerial" -Recurse -Filter "sqlite-jdbc-*.jar" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notmatch "sources|javadoc" } |
-    Sort-Object Name -Descending | Select-Object -First 1
-if (-not $jar) {
-    $jar = Get-ChildItem -Path "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\org.xerial" -Recurse -Filter "sqlite-jdbc-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch "sources|javadoc" } |
-        Sort-Object Name -Descending | Select-Object -First 1
-}
+```bash
+jar=$(find "$M2_REPO/org/xerial" -name "sqlite-jdbc-*.jar" 2>/dev/null \
+    | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+if [ -z "$jar" ]; then
+    jar=$(find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.xerial" -name "sqlite-jdbc-*.jar" 2>/dev/null \
+        | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+fi
 ```
 
 **SQL Server**：
 
-```powershell
-$jar = Get-ChildItem -Path "$env:USERPROFILE\.m2\repository\com\microsoft\sqlserver" -Recurse -Filter "mssql-jdbc-*.jar" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notmatch "sources|javadoc" } |
-    Sort-Object Name -Descending | Select-Object -First 1
-if (-not $jar) {
-    $jar = Get-ChildItem -Path "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\com.microsoft.sqlserver" -Recurse -Filter "mssql-jdbc-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch "sources|javadoc" } |
-        Sort-Object Name -Descending | Select-Object -First 1
-}
+```bash
+jar=$(find "$M2_REPO/com/microsoft/sqlserver" -name "mssql-jdbc-*.jar" 2>/dev/null \
+    | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+if [ -z "$jar" ]; then
+    jar=$(find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/com.microsoft.sqlserver" -name "mssql-jdbc-*.jar" 2>/dev/null \
+        | grep -v -E '(sources|javadoc)' | sort -rV | head -1)
+fi
 ```
 
 ## 命令模式（借鉴 DBHub 设计）
@@ -252,18 +257,21 @@ SqlRunner 支持 4 种命令模式，类似 DBHub 的 `execute_sql` + `search_ob
 ### 缓存目录
 
 ```
-%USERPROFILE%\.cache\db-assistant\
+${XDG_CACHE_HOME:-$HOME/.cache}/db-assistant/
 ├── schema-192.168.12.122:1433-test-users.json    # 表结构缓存
 ├── schema-192.168.12.122:1433-test-users.meta    # 缓存元数据（时间戳）
 ├── tables-192.168.12.122:1433-test.json          # 表列表缓存
 └── indexes-192.168.12.122:1433-test-users.json   # 索引缓存
 ```
 
+> macOS/Linux 默认 `~/.cache/db-assistant/`，Windows 默认 `%USERPROFILE%\.cache\db-assistant\`。
+> 如设置了 `XDG_CACHE_HOME`，则使用 `$XDG_CACHE_HOME/db-assistant/`。
+
 ### 缓存规则
 
 | 配置项    | 默认值                                    | 说明          |
 | ------ | -------------------------------------- | ----------- |
-| 缓存目录   | `%USERPROFILE%\.cache\db-assistant\`   | Java 端自动创建  |
+| 缓存目录   | `${XDG_CACHE_HOME:-$HOME/.cache}/db-assistant/` | Java 端自动创建  |
 | 默认 TTL | 5 分钟                                   | 缓存过期时间      |
 | 缓存键    | `schema-{host}-{db}-{table}`           | 唯一标识        |
 | 自动清理   | 过期自动删除                                 | 无需手动维护      |
@@ -295,61 +303,69 @@ SqlRunner 支持 4 种命令模式，类似 DBHub 的 `execute_sql` + `search_ob
 
 ### 步骤 2：编译并执行（带编译缓存，按 JDK 版本隔离）
 
-```powershell
-# Skill 所在目录
-$SKILL_DIR = "$env:USERPROFILE\.codex\skills\db-assistant"
+```bash
+# Skill 所在目录（根据实际安装路径调整）
+SKILL_DIR="$HOME/.agents/skills/db-assistant"
 
-# 获取 JDK 路径和版本
-$javaHome = mise where java
-if (-not $javaHome) { $javaHome = $env:JAVA_HOME }
-$javaBin = Join-Path $javaHome "bin"
+# 获取 JDK 路径和版本（复用前面 JDK 检测逻辑）
+java_home=$(mise where java 2>/dev/null || echo "$JAVA_HOME")
+if [ -z "$java_home" ]; then
+    java_bin_path=$(which java 2>/dev/null)
+    java_home=$(dirname "$(dirname "$java_bin_path")")
+fi
+java_bin="$java_home/bin/java"
 
-$versionOutput = & "$javaBin\java" -version 2>&1 | Out-String
-if ($versionOutput -match '"1\.(\d+)\.') {
-    $javaVersion = "1.$($Matches[1])"
-    $jdkMajor = $Matches[1]
-} elseif ($versionOutput -match '"(\d+)') {
-    $javaVersion = $Matches[1]
-    $jdkMajor = $Matches[1]
-}
+version_output=$("$java_bin" -version 2>&1)
+if echo "$version_output" | grep -q '"1\.'; then
+    java_version=$(echo "$version_output" | grep -o '"1\.[0-9]*' | head -1 | cut -d. -f2)
+else
+    java_version=$(echo "$version_output" | grep -o '"[0-9]*' | head -1 | tr -d '"')
+fi
 
 # 编译缓存目录（按 JDK 版本隔离，避免版本不兼容）
-$cacheDir = "$env:TEMP\db-assistant-cache\java-$javaVersion"
-New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
-$classFile = Join-Path $cacheDir "SqlRunner.class"
+cache_dir="${TMPDIR:-/tmp}/db-assistant-cache/java-$java_version"
+mkdir -p "$cache_dir"
+class_file="$cache_dir/SqlRunner.class"
 
 # 检查是否需要重新编译
-$sourceFile = Join-Path $SKILL_DIR "lib\SqlRunner.java"
-$needCompile = -not (Test-Path $classFile) -or ((Get-Item $sourceFile).LastWriteTime -gt (Get-Item $classFile).LastWriteTime)
+source_file="$SKILL_DIR/lib/SqlRunner.java"
+need_compile=false
+if [ ! -f "$class_file" ] || [ "$source_file" -nt "$class_file" ]; then
+    need_compile=true
+fi
 
-if ($needCompile) {
-    & "$javaBin\javac" -d $cacheDir $sourceFile
-}
+if [ "$need_compile" = true ]; then
+    "$java_home/bin/javac" -d "$cache_dir" "$source_file"
+fi
 
-# 拼接 classpath（Windows 使用分号分隔）
-$driverJar = "<上一步定位到的驱动 JAR 完整路径>"
-$classpath = "$cacheDir;$driverJar"
+# 拼接 classpath（macOS/Linux 使用冒号，Windows 使用分号）
+driver_jar="<上一步定位到的驱动 JAR 完整路径>"
+if [ "$(uname -s 2>/dev/null)" = "MINGW"* ] || [ "$(uname -s 2>/dev/null)" = "MSYS"* ] || [ "$(uname -s 2>/dev/null)" = "CYGWIN"* ]; then
+    classpath="$cache_dir;$driver_jar"
+else
+    classpath="$cache_dir:$driver_jar"
+fi
 
 # 执行命令（自动使用 Schema 缓存）
-& "$javaBin\java" -cp $classpath SqlRunner `
-    <command> "$jdbcUrl" "$dbUser" "$dbPassword" <args> `
+"$java_bin" -cp "$classpath" SqlRunner \
+    <command> "$jdbcUrl" "$dbUser" "$dbPassword" <args> \
     --readonly --max-rows 200 --timeout 30
 
 # 强制刷新 Schema 缓存
-& "$javaBin\java" -cp $classpath SqlRunner `
-    <command> "$jdbcUrl" "$dbUser" "$dbPassword" <args> `
+"$java_bin" -cp "$classpath" SqlRunner \
+    <command> "$jdbcUrl" "$dbUser" "$dbPassword" <args> \
     --readonly --no-cache
 ```
 
 **编译缓存目录结构**：
 
 ```
-%TEMP%\db-assistant-cache\
-├── java-8\
+${TMPDIR:-/tmp}/db-assistant-cache/
+├── java-8/
 │   └── SqlRunner.class      # Java 8 编译版本
-├── java-17\
+├── java-17/
 │   └── SqlRunner.class      # Java 17 编译版本
-└── java-21\
+└── java-21/
     └── SqlRunner.class      # Java 21 编译版本
 ```
 
@@ -401,7 +417,7 @@ SqlRunner 输出 JSON 格式，AI 需转换为 Markdown 表格：
       "jdbcUrl": "jdbc:mysql://localhost:3306/myapp",
       "user": "root",
       "password": "xxx",
-      "driverJar": "C:\\Users\\Administrator\\.m2\\repository\\com\\mysql\\mysql-connector-j\\9.1.0\\mysql-connector-j-9.1.0.jar",
+      "driverJar": "$HOME/.m2/repository/com/mysql/mysql-connector-j/9.1.0/mysql-connector-j-9.1.0.jar",
       "lastUsed": "2024-01-01T12:00:00Z"
     }
   },
@@ -413,11 +429,11 @@ SqlRunner 输出 JSON 格式，AI 需转换为 Markdown 表格：
 
 | 规则       | 默认值    | 说明                                           |
 | -------- | ------ | -------------------------------------------- |
-| 只读模式     | 开启     | 仅允许 SELECT/SHOW/DESCRIBE/EXPLAIN/PRAGMA/WITH |
+| 只读模式     | **默认开启** | SqlRunner 默认 `readonly=true`，仅允许 SELECT/SHOW/DESCRIBE/EXPLAIN/PRAGMA/WITH。执行写操作时**必须传入 `--no-readonly`**，不传或传 `--readonly` 均为只读 |
 | 最大行数     | 200    | 防止结果集过大                                      |
 | 查询超时     | 30 秒   | 防止长查询阻塞                                      |
 | 文本截断     | 500 字符 | 防止大字段占用过多上下文                                 |
-| 写操作      | 需确认    | 执行 INSERT/UPDATE/DELETE/DROP 前必须获得用户明确授权     |
+| 写操作      | 需确认    | 执行 INSERT/UPDATE/DELETE/DROP/TRUNCATE 前必须获得用户明确授权 |
 | 密码处理     | 脱敏     | 日志和上下文中不显示密码原文                               |
 | SQL 注入检测 | 开启     | 检测 `; DROP`、`UNION SELECT` 等危险模式             |
 
@@ -432,9 +448,18 @@ SqlRunner 输出 JSON 格式，AI 需转换为 Markdown 表格：
 
 ### 写操作流程
 
+> **重要**：SqlRunner 的 `readonly` 默认值为 `true`（代码中硬编码）。不传 `--readonly` 参数时仍然是只读模式。执行写操作**必须显式传入 `--no-readonly`**。
+
 1. 用户请求执行写操作
 2. AI 确认操作意图："你确认要执行 `UPDATE users SET status='inactive' WHERE id=1` 吗？这将影响 1 行数据。"
-3. 用户明确确认后，移除 `--readonly` 参数执行
+3. 用户明确确认后，传入 `--no-readonly` 参数执行：
+
+```bash
+# 写操作示例（注意 --no-readonly）
+"$java_bin" -cp "$classpath" SqlRunner \
+    execute_sql "$jdbcUrl" "$dbUser" "$dbPassword" "$sql" \
+    --no-readonly --max-rows 200 --timeout 30
+```
 
 ## 常见查询模板
 

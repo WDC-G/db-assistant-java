@@ -20,7 +20,7 @@ DB Assistant 让 AI Agent 能够直接探索和查询关系型数据库，无需
 
 - **多数据库**：支持 20+ 种数据库 — MySQL / MariaDB / Oracle / PostgreSQL / Greenplum / GaussDB / SQL Server / SQLite / DB2 / SAP HANA / DM(达梦) / Kingbase(人大金仓) / OceanBase / ClickHouse / Doris / StarRocks / TDSQL / Sybase / TDengine / Hive / Impala / Inceptor / ArgoDB / GBase / NebulaGraph
 - **零安装**：无需构建工具 — `javac` 即时编译单文件工具
-- **驱动自动发现**：从 `~/.m2` 和 `~/.gradle` 缓存中定位 JDBC 驱动 JAR
+- **驱动自动发现**：从 `~/.m2` 和 `~/.gradle` 缓存中定位 JDBC 驱动 JAR（Windows 下为 `%USERPROFILE%\.m2` 和 `%USERPROFILE%\.gradle`）
 - **智能缓存**：Schema、表列表、索引结果带 TTL 缓存
 - **默认只读**：写操作需要用户明确确认
 - **安全防护**：行数限制、查询超时、文本截断、SQL 注入检测
@@ -80,7 +80,7 @@ AI Agent 自动将其转换为 Markdown 表格。
 Schema 查询（`list_tables`、`describe_table`、`list_indexes`）会自动缓存，避免重复连接数据库：
 
 ```
-~/.cache/db-assistant/
+~/.cache/db-assistant/          # Windows: %USERPROFILE%\.cache\db-assistant\
 ├── tables-{host}-{db}.json
 ├── schema-{host}-{db}-{table}.json
 └── indexes-{host}-{db}-{table}.json
@@ -104,7 +104,7 @@ git clone https://github.com/cycle2zhou/db-assistant-java.git ~/.agents/skills/d
 ### 前置条件
 
 - **JDK 8+**（任意版本，通过 `mise` 或 `JAVA_HOME` 自动检测）
-- 本地 Maven（`~/.m2`）或 Gradle（`~/.gradle`）缓存中有对应数据库的 **JDBC 驱动**
+- 本地 Maven（`~/.m2`）或 Gradle（`~/.gradle`）缓存中有对应数据库的 **JDBC 驱动**。Windows 下对应 `%USERPROFILE%\.m2` 和 `%USERPROFILE%\.gradle`。
 
 ### JDBC 驱动自动发现
 

@@ -20,7 +20,7 @@ It ships as a single Java source file (`SqlRunner.java`) that compiles on the fl
 
 - **Multi-database**: 20+ databases — MySQL / MariaDB / Oracle / PostgreSQL / Greenplum / GaussDB / SQL Server / SQLite / DB2 / SAP HANA / DM / Kingbase / OceanBase / ClickHouse / Doris / StarRocks / TDSQL / Sybase / TDengine / Hive / Impala / Inceptor / ArgoDB / GBase / NebulaGraph
 - **Zero install**: No build tool required — `javac` compiles the single-file tool on the fly
-- **Driver auto-discovery**: Locates JDBC driver JARs from `~/.m2` and `~/.gradle` caches
+- **Driver auto-discovery**: Locates JDBC driver JARs from `~/.m2` and `~/.gradle` caches (`%USERPROFILE%\.m2` / `%USERPROFILE%\.gradle` on Windows)
 - **Smart caching**: Schema, table list, and index results cached with configurable TTL
 - **Read-only by default**: Write operations require explicit user confirmation
 - **Safety guards**: Row limit, query timeout, text truncation, SQL injection detection
@@ -80,7 +80,7 @@ The AI agent converts this to Markdown tables automatically.
 Schema queries (`list_tables`, `describe_table`, `list_indexes`) are cached to avoid repeated database connections:
 
 ```
-~/.cache/db-assistant/
+~/.cache/db-assistant/          # Windows: %USERPROFILE%\.cache\db-assistant\
 ├── tables-{host}-{db}.json
 ├── schema-{host}-{db}-{table}.json
 └── indexes-{host}-{db}-{table}.json
@@ -104,7 +104,7 @@ git clone https://github.com/cycle2zhou/db-assistant-java.git ~/.agents/skills/d
 ### Prerequisites
 
 - **JDK 8+** (any version, auto-detected via `mise` or `JAVA_HOME`)
-- **JDBC driver** in local Maven (`~/.m2`) or Gradle (`~/.gradle`) cache for your database
+- **JDBC driver** in local Maven (`~/.m2`) or Gradle (`~/.gradle`) cache for your database. On Windows, these are `%USERPROFILE%\.m2` and `%USERPROFILE%\.gradle`.
 
 ### JDBC Driver Auto-Discovery
 
